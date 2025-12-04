@@ -2,23 +2,31 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0d6efd">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="LiveChat">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
     <title>LiveChat Demo</title>
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="/icon-192.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="/icon-192.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-192.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="/icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; height: 100vh; display: flex; flex-direction: column; }
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .modal { background: white; padding: 2rem; border-radius: 12px; width: 90%; max-width: 400px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
         .modal h2 { margin-bottom: 1rem; color: #333; }
-        .modal input, .modal textarea { width: 100%; padding: 12px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; margin-bottom: 1rem; font-family: inherit; }
+        .modal input, .modal textarea { width: 100%; padding: 12px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; margin-bottom: 1rem; font-family: inherit; -webkit-user-select: text; user-select: text; }
         .modal input:focus, .modal textarea:focus { outline: none; border-color: #0d6efd; }
-        .modal button { width: 100%; padding: 12px; font-size: 16px; background: #0d6efd; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        .modal input[type="text"] { -webkit-appearance: none; appearance: none; }
+        .modal button { width: 100%; padding: 12px; font-size: 16px; background: #0d6efd; color: white; border: none; border-radius: 8px; cursor: pointer; -webkit-appearance: none; }
         .modal button:hover { background: #0b5ed7; }
         .modal button.secondary { background: #6c757d; margin-top: 0.5rem; }
         .hidden { display: none !important; }
@@ -28,6 +36,7 @@
         .header .user-avatar { width: 32px; height: 32px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; }
         .notification-btn { background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; margin-left: 10px; }
         .notification-btn.enabled { background: #28a745; }
+        .logout-btn { background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; margin-left: 10px; }
         .room-selector { background: white; padding: 0.75rem 1rem; border-bottom: 1px solid #eee; display: flex; gap: 0.5rem; overflow-x: auto; align-items: center; }
         .room-btn { padding: 8px 16px; border: 2px solid #0d6efd; background: white; color: #0d6efd; border-radius: 20px; cursor: pointer; white-space: nowrap; font-size: 0.9rem; }
         .room-btn.active { background: #0d6efd; color: white; }
@@ -67,6 +76,8 @@
         .install-prompt button { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; }
         .install-prompt .install-btn { background: #0d6efd; color: white; }
         .install-prompt .dismiss-btn { background: #eee; color: #666; }
+        .ios-install-guide { background: #fff3cd; color: #856404; padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-bottom: 0.5rem; }
+        .ios-install-guide strong { display: block; margin-bottom: 4px; }
     </style>
 </head>
 <body>
@@ -75,8 +86,8 @@
         <div class="modal">
             <h2>👋 Welcome to LiveChat</h2>
             <p style="margin-bottom: 1rem; color: #666;">Enter your name to start chatting</p>
-            <input type="text" id="usernameInput" placeholder="Your name" maxlength="50" autocomplete="off">
-            <button id="joinBtn">Join Chat</button>
+            <input type="text" id="usernameInput" placeholder="Your name" maxlength="50" autocomplete="name" autocapitalize="words" autocorrect="off" spellcheck="false" inputmode="text">
+            <button type="button" id="joinBtn">Join Chat</button>
         </div>
     </div>
 
@@ -84,10 +95,25 @@
     <div id="createRoomModal" class="modal-overlay hidden">
         <div class="modal">
             <h2>🏠 Create New Room</h2>
-            <input type="text" id="roomNameInput" placeholder="Room name" maxlength="100">
-            <textarea id="roomDescInput" placeholder="Description (optional)" rows="2"></textarea>
-            <button id="createRoomSubmitBtn">Create Room</button>
-            <button id="cancelCreateRoomBtn" class="secondary">Cancel</button>
+            <input type="text" id="roomNameInput" placeholder="Room name" maxlength="100" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" inputmode="text">
+            <textarea id="roomDescInput" placeholder="Description (optional)" rows="2" autocomplete="off"></textarea>
+            <button type="button" id="createRoomSubmitBtn">Create Room</button>
+            <button type="button" id="cancelCreateRoomBtn" class="secondary">Cancel</button>
+        </div>
+    </div>
+
+    <!-- iOS Install Guide -->
+    <div id="iosInstallGuide" class="modal-overlay hidden">
+        <div class="modal">
+            <h2>📲 Add to Home Screen</h2>
+            <div class="ios-install-guide">
+                <strong>On Safari:</strong>
+                1. Tap the Share button (📤) at the bottom<br>
+                2. Scroll down and tap "Add to Home Screen"<br>
+                3. Tap "Add" in the top right corner
+            </div>
+            <p style="margin-bottom: 1rem; color: #666; font-size: 0.9rem;">This will install LiveChat as an app on your device for the best experience.</p>
+            <button type="button" id="closeIosGuide">Got it!</button>
         </div>
     </div>
 
@@ -107,6 +133,7 @@
                 <div class="user-avatar" id="userAvatar">?</div>
                 <span id="displayUsername">Guest</span>
                 <button class="notification-btn" id="notificationBtn">🔔 Notifications</button>
+                <button class="logout-btn" id="logoutBtn">🚪 Logout</button>
             </div>
         </header>
 
@@ -154,10 +181,14 @@
             wsReconnectDelay: 1000,
             typingUsers: new Set(),
             typingTimeout: null,
-            pushSubscription: null
+            pushSubscription: null,
+            isReconnecting: false
         };
 
         const $ = id => document.getElementById(id);
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        
         const elements = {
             modal: $('usernameModal'), usernameInput: $('usernameInput'), joinBtn: $('joinBtn'),
             chatInterface: $('chatInterface'), messagesContainer: $('messagesContainer'),
@@ -168,24 +199,63 @@
             createRoomBtn: $('createRoomBtn'), createRoomModal: $('createRoomModal'),
             roomNameInput: $('roomNameInput'), roomDescInput: $('roomDescInput'),
             createRoomSubmitBtn: $('createRoomSubmitBtn'), cancelCreateRoomBtn: $('cancelCreateRoomBtn'),
-            typingIndicator: $('typingIndicator')
+            typingIndicator: $('typingIndicator'), logoutBtn: $('logoutBtn'),
+            iosInstallGuide: $('iosInstallGuide'), closeIosGuide: $('closeIosGuide')
         };
 
         function init() {
             if (state.username) showChat();
-            elements.joinBtn.onclick = joinChat;
-            elements.usernameInput.onkeypress = e => e.key === 'Enter' && joinChat();
-            elements.sendBtn.onclick = sendMessage;
-            elements.messageInput.onkeypress = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
-            elements.messageInput.oninput = () => { autoResizeTextarea(); sendTypingIndicator(); };
-            elements.notificationBtn.onclick = toggleNotifications;
-            elements.dismissInstall.onclick = () => elements.installPrompt.classList.add('hidden');
-            elements.createRoomBtn.onclick = () => { elements.createRoomModal.classList.remove('hidden'); elements.roomNameInput.focus(); };
-            elements.cancelCreateRoomBtn.onclick = () => { elements.createRoomModal.classList.add('hidden'); elements.roomNameInput.value = ''; elements.roomDescInput.value = ''; };
-            elements.createRoomSubmitBtn.onclick = createRoom;
-            elements.roomNameInput.onkeypress = e => e.key === 'Enter' && createRoom();
+            else {
+                // Focus input with a small delay to ensure DOM is ready
+                setTimeout(() => {
+                    elements.usernameInput.focus();
+                    elements.usernameInput.click();
+                }, 100);
+            }
+            
+            // Use proper event listeners instead of onclick
+            elements.joinBtn.addEventListener('click', function(e) { e.preventDefault(); joinChat(); });
+            elements.usernameInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); joinChat(); } });
+            
+            elements.sendBtn.addEventListener('click', function(e) { e.preventDefault(); sendMessage(); });
+            elements.messageInput.addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+            elements.messageInput.addEventListener('input', function() { autoResizeTextarea(); sendTypingIndicator(); });
+            
+            elements.notificationBtn.addEventListener('click', function(e) { e.preventDefault(); toggleNotifications(); });
+            elements.dismissInstall.addEventListener('click', function() { elements.installPrompt.classList.add('hidden'); });
+            
+            elements.createRoomBtn.addEventListener('click', function(e) { 
+                e.preventDefault(); 
+                elements.createRoomModal.classList.remove('hidden'); 
+                setTimeout(() => { elements.roomNameInput.focus(); elements.roomNameInput.click(); }, 100); 
+            });
+            elements.cancelCreateRoomBtn.addEventListener('click', function(e) { 
+                e.preventDefault(); 
+                elements.createRoomModal.classList.add('hidden'); 
+                elements.roomNameInput.value = ''; 
+                elements.roomDescInput.value = ''; 
+            });
+            elements.createRoomSubmitBtn.addEventListener('click', function(e) { e.preventDefault(); createRoom(); });
+            elements.roomNameInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); createRoom(); } });
+            
+            elements.logoutBtn.addEventListener('click', function(e) { e.preventDefault(); logout(); });
+            elements.closeIosGuide.addEventListener('click', function() { elements.iosInstallGuide.classList.add('hidden'); localStorage.setItem('ios_install_dismissed', 'true'); });
+            
             registerServiceWorker();
             setupInstallPrompt();
+        }
+
+        function logout() {
+            if (state.ws) { wsLeaveRoom(state.currentRoom); state.ws.close(); state.ws = null; }
+            localStorage.removeItem('chat_username');
+            state.username = '';
+            state.messages = [];
+            state.currentRoom = '1';
+            state.lastMessageId = 0;
+            elements.chatInterface.classList.add('hidden');
+            elements.modal.classList.remove('hidden');
+            elements.usernameInput.value = '';
+            setTimeout(() => { elements.usernameInput.focus(); elements.usernameInput.click(); }, 100);
         }
 
         function joinChat() {
@@ -246,12 +316,28 @@
         function connectWebSocket() {
             if (state.ws && state.ws.readyState === WebSocket.OPEN) return;
             const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wasReconnecting = state.isReconnecting;
+            state.isReconnecting = state.wsReconnectAttempts > 0;
             updateStatus('connecting', 'Connecting...');
             try {
                 state.ws = new WebSocket(`${protocol}//${location.host}/ws`);
-                state.ws.onopen = () => { state.wsReconnectAttempts = 0; state.wsReconnectDelay = 1000; updateStatus('connected', 'Connected'); wsJoinRoom(state.currentRoom); };
+                state.ws.onopen = async () => { 
+                    state.wsReconnectAttempts = 0; 
+                    state.wsReconnectDelay = 1000; 
+                    updateStatus('connected', 'Connected'); 
+                    wsJoinRoom(state.currentRoom);
+                    // Reload messages after reconnection
+                    if (state.isReconnecting) {
+                        await loadMessages();
+                        state.isReconnecting = false;
+                    }
+                };
                 state.ws.onmessage = e => handleWebSocketMessage(JSON.parse(e.data));
-                state.ws.onclose = () => { updateStatus('error', 'Disconnected. Reconnecting...'); scheduleReconnect(); };
+                state.ws.onclose = () => { 
+                    state.isReconnecting = true;
+                    updateStatus('error', 'Disconnected. Reconnecting...'); 
+                    scheduleReconnect(); 
+                };
                 state.ws.onerror = () => updateStatus('error', 'Connection error');
             } catch (e) { updateStatus('error', 'Connection failed'); scheduleReconnect(); }
         }
@@ -259,6 +345,7 @@
         function scheduleReconnect() {
             if (state.wsReconnectAttempts >= state.wsMaxReconnectAttempts) { updateStatus('error', 'Unable to connect. Please refresh.'); return; }
             state.wsReconnectAttempts++;
+            state.isReconnecting = true;
             const delay = Math.min(state.wsReconnectDelay * Math.pow(2, state.wsReconnectAttempts - 1), 30000);
             setTimeout(connectWebSocket, delay);
         }
@@ -417,16 +504,34 @@
 
         let deferredPrompt;
         function setupInstallPrompt() {
+            // For Chrome/Android - standard PWA install prompt
             window.addEventListener('beforeinstallprompt', e => {
                 e.preventDefault();
                 deferredPrompt = e;
-                setTimeout(() => { if (!window.matchMedia('(display-mode: standalone)').matches) elements.installPrompt.classList.remove('hidden'); }, 3000);
+                setTimeout(() => { if (!isInStandaloneMode) elements.installPrompt.classList.remove('hidden'); }, 3000);
             });
-            elements.installBtn.onclick = async () => { if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; } elements.installPrompt.classList.add('hidden'); };
+            elements.installBtn.addEventListener('click', async function() { 
+                if (deferredPrompt) { 
+                    deferredPrompt.prompt(); 
+                    await deferredPrompt.userChoice; 
+                    deferredPrompt = null; 
+                } 
+                elements.installPrompt.classList.add('hidden'); 
+            });
+            
+            // For iOS - show manual instructions
+            if (isIOS && !isInStandaloneMode && !localStorage.getItem('ios_install_dismissed')) {
+                setTimeout(() => { elements.iosInstallGuide.classList.remove('hidden'); }, 5000);
+            }
         }
 
         setInterval(() => { if (state.ws?.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ type: 'ping' })); }, 30000);
-        document.addEventListener('visibilitychange', () => { if (!document.hidden && state.username && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) connectWebSocket(); });
+        document.addEventListener('visibilitychange', () => { 
+            if (!document.hidden && state.username && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
+                state.isReconnecting = true;
+                connectWebSocket(); 
+            }
+        });
 
         init();
     </script>
