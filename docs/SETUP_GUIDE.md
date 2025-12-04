@@ -53,24 +53,32 @@ docker compose exec php php spark migrate
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Docker Compose                          │
-├─────────────┬─────────────┬─────────────┬──────────────────┤
-│   nginx     │    PHP      │  PostgreSQL │     Valkey       │
-│  (reverse   │  (CI4 app)  │   (data)    │   (pub/sub)      │
-│   proxy)    │             │             │                  │
-│  :780/:7443 │    :9000    │    :5432    │     :6379        │
-└─────────────┴─────────────┴─────────────┴──────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                        Docker Compose                              │
+├─────────────┬─────────────┬─────────────┬───────────┬─────────────┤
+│   nginx     │    PHP      │  PostgreSQL │  Valkey   │  WebSocket  │
+│  (reverse   │  (CI4 app)  │   (data)    │ (pub/sub) │  (Node.js)  │
+│   proxy)    │             │             │           │             │
+│ :780/:7443  │   :9000     │   :5432     │  :6379    │   :8080     │
+└─────────────┴─────────────┴─────────────┴───────────┴─────────────┘
 ```
 
 ### Services
 
-| Service  | Image                    | Purpose                      |
-|----------|--------------------------|------------------------------|
-| nginx    | Custom (nginx:stable-alpine) | HTTPS termination, reverse proxy |
-| php      | Custom (php:8.3-fpm-alpine)  | CodeIgniter 4 application    |
-| postgres | postgres:16              | Primary database             |
-| valkey   | valkey/valkey:8.0-alpine | Real-time pub/sub messaging  |
+| Service   | Image                          | Purpose                           |
+|-----------|--------------------------------|-----------------------------------|
+| nginx     | Custom (nginx:stable-alpine)   | HTTPS termination, reverse proxy  |
+| php       | Custom (php:8.3-fpm-alpine)    | CodeIgniter 4 application         |
+| postgres  | postgres:16                    | Primary database                  |
+| valkey    | valkey/valkey:8.0-alpine       | Real-time pub/sub messaging       |
+| websocket | Custom (node:20-alpine)        | WebSocket server for real-time    |
+
+### Real-time Messaging Flow
+
+1. Client connects to WebSocket via `wss://localhost:7443/ws`
+2. WebSocket server subscribes to Valkey `room:*` channels
+3. When a message is sent via REST API, it publishes to Valkey
+4. WebSocket server broadcasts to all connected clients in that room
 
 ---
 

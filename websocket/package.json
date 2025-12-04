@@ -1,0 +1,13 @@
+{
+  "name": "livechat-websocket",
+  "version": "1.0.0",
+  "description": "WebSocket server for LiveChat with Valkey pub/sub",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.17.1",
+    "ioredis": "^5.3.2"
+  }
+}

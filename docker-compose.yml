@@ -37,6 +37,18 @@ services:
     ports:
       - "6379:6379"
 
+  websocket:
+    build:
+      context: .
+      dockerfile: docker/websocket/Dockerfile
+    environment:
+      - WS_PORT=8080
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+    depends_on:
+      - valkey
+    restart: unless-stopped
+
   nginx:
     build:
       context: .
@@ -51,6 +63,7 @@ services:
     depends_on:
       - php
       - valkey
+      - websocket
 
 volumes:
   pgdata:

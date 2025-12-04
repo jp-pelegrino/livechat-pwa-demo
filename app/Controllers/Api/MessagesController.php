@@ -11,7 +11,7 @@ class MessagesController extends ResourceController
 
     /**
      * GET /api/tickets/{id}/messages
-     * List messages for a ticket
+     * List messages for a ticket/room
      */
     public function index($ticketId = null)
     {
@@ -71,10 +71,14 @@ class MessagesController extends ResourceController
         $builder->insert($messageData);
         $messageId = $db->insertID();
 
-        // Publish to Valkey for real-time updates
+        // Publish to Valkey for real-time updates (WebSocket server listens to room:* pattern)
         try {
             $valkey = new ValkeyClient();
-            $valkey->publish("ticket:{$ticketId}", array_merge($messageData, ['id' => $messageId]));
+            $publishData = array_merge($messageData, [
+                'id' => $messageId,
+                'roomId' => $ticketId
+            ]);
+            $valkey->publish("room:{$ticketId}", $publishData);
         } catch (\Exception $e) {
             // Log but don't fail if Valkey is unavailable
             log_message('error', 'Valkey publish failed: ' . $e->getMessage());
