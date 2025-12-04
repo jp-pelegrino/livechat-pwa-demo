@@ -20,6 +20,7 @@ RUN apk update && apk add --no-cache \
 # Install PHP extensions
 RUN docker-php-ext-install \
     pdo_pgsql \
+    pgsql \
     opcache \
     intl \
     zip \
