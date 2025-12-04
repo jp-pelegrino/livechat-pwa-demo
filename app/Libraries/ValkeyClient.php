@@ -3,7 +3,7 @@
 namespace App\Libraries;
 
 /**
- * ValkeyClient - Wrapper for Valkey (Redis-compatible) HTTP API
+ * ValkeyClient - Wrapper for Valkey (Redis-compatible) using RESP protocol
  */
 class ValkeyClient
 {
@@ -13,11 +13,11 @@ class ValkeyClient
     public function __construct()
     {
         $this->host = env('VALKEY_HOST', 'valkey');
-        $this->port = (int) env('VALKEY_PORT', 8080);
+        $this->port = (int) env('VALKEY_PORT', 6379);
     }
 
     /**
-     * Publish a message to a Valkey channel
+     * Publish a message to a Valkey channel using Redis PUBLISH command
      *
      * @param string $channel The channel name
      * @param array $payload The message payload
@@ -26,32 +26,47 @@ class ValkeyClient
     public function publish(string $channel, array $payload): bool
     {
         try {
-            $url = "http://{$this->host}:{$this->port}/publish";
+            $socket = @fsockopen($this->host, $this->port, $errno, $errstr, 2);
             
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [
-                CURLOPT_POST           => true,
-                CURLOPT_POSTFIELDS     => json_encode([
-                    'channel' => $channel,
-                    'message' => $payload,
-                ]),
-                CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT        => 5,
-                CURLOPT_CONNECTTIMEOUT => 2,
-            ]);
+            if (!$socket) {
+                log_message('error', "Valkey connection failed: {$errstr} ({$errno})");
+                return false;
+            }
+
+            $message = json_encode($payload);
             
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+            // Build Redis RESP protocol command: PUBLISH channel message
+            $command = $this->buildCommand('PUBLISH', $channel, $message);
+            
+            fwrite($socket, $command);
+            $response = fgets($socket);
+            fclose($socket);
 
-            // Log the attempt for debugging
-            log_message('debug', "Valkey publish to {$channel}: HTTP {$httpCode}");
+            // Redis PUBLISH returns an integer (number of subscribers)
+            // Response format: ":N\r\n" where N is the count
+            $success = $response !== false && $response[0] === ':';
 
-            return $httpCode >= 200 && $httpCode < 300;
+            log_message('debug', "Valkey PUBLISH to {$channel}: " . trim($response));
+
+            return $success;
         } catch (\Exception $e) {
             log_message('error', "Valkey publish error: {$e->getMessage()}");
             return false;
         }
+    }
+
+    /**
+     * Build a Redis RESP protocol command
+     *
+     * @param string ...$args Command arguments
+     * @return string RESP formatted command
+     */
+    protected function buildCommand(string ...$args): string
+    {
+        $command = '*' . count($args) . "\r\n";
+        foreach ($args as $arg) {
+            $command .= '$' . strlen($arg) . "\r\n" . $arg . "\r\n";
+        }
+        return $command;
     }
 }

@@ -30,12 +30,12 @@ services:
       - DB_USER=ci
       - DB_PASS=secret
       - VALKEY_HOST=valkey
-      - VALKEY_PORT=8080
+      - VALKEY_PORT=6379
 
   valkey:
     image: valkey/valkey:8.0-alpine
     ports:
-      - "8080:6379"
+      - "6379:6379"
 
   nginx:
     image: nginx:stable-alpine
