@@ -1,7 +1,8 @@
 FROM php:8.3-fpm-alpine
 
 # Install build dependencies and libraries required for PHP extensions
-RUN apk add --no-cache \
+# Using --update to refresh package index and retry logic for network issues
+RUN apk update && apk add --no-cache \
     autoconf \
     g++ \
     gcc \
@@ -11,7 +12,9 @@ RUN apk add --no-cache \
     icu-dev \
     libzip-dev \
     oniguruma-dev \
-    git
+    git \
+    || (sleep 5 && apk update && apk add --no-cache \
+    autoconf g++ gcc make musl-dev libpq-dev icu-dev libzip-dev oniguruma-dev git)
 
 # Install PHP extensions
 RUN docker-php-ext-install \
