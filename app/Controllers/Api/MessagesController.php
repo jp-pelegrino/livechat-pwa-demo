@@ -19,10 +19,18 @@ class MessagesController extends ResourceController
             return $this->failValidationErrors('Ticket ID is required');
         }
 
+        // Get 'since' parameter for polling (messages after a certain ID)
+        $since = $this->request->getGet('since');
+
         $db = \Config\Database::connect();
         $builder = $db->table('messages');
-        $messages = $builder->where('ticket_id', $ticketId)
-                            ->orderBy('created_at', 'ASC')
+        $builder->where('ticket_id', $ticketId);
+        
+        if ($since) {
+            $builder->where('id >', $since);
+        }
+        
+        $messages = $builder->orderBy('created_at', 'ASC')
                             ->get()
                             ->getResultArray();
 
@@ -45,13 +53,18 @@ class MessagesController extends ResourceController
             return $this->failValidationErrors('Message body is required');
         }
 
+        if (empty($data['username'])) {
+            return $this->failValidationErrors('Username is required');
+        }
+
         $db = \Config\Database::connect();
         $builder = $db->table('messages');
 
         $messageData = [
             'ticket_id'  => $ticketId,
-            'sender_id'  => $data['sender_id'] ?? 1, // Default sender if not provided
-            'body'       => $data['body'],
+            'sender_id'  => $data['sender_id'] ?? 0,
+            'username'   => htmlspecialchars($data['username'], ENT_QUOTES, 'UTF-8'),
+            'body'       => htmlspecialchars($data['body'], ENT_QUOTES, 'UTF-8'),
             'created_at' => date('Y-m-d H:i:s'),
         ];
 
@@ -59,8 +72,13 @@ class MessagesController extends ResourceController
         $messageId = $db->insertID();
 
         // Publish to Valkey for real-time updates
-        $valkey = new ValkeyClient();
-        $valkey->publish("ticket:{$ticketId}", array_merge($messageData, ['id' => $messageId]));
+        try {
+            $valkey = new ValkeyClient();
+            $valkey->publish("ticket:{$ticketId}", array_merge($messageData, ['id' => $messageId]));
+        } catch (\Exception $e) {
+            // Log but don't fail if Valkey is unavailable
+            log_message('error', 'Valkey publish failed: ' . $e->getMessage());
+        }
 
         $messageData['id'] = $messageId;
 
