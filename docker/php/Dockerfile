@@ -10,7 +10,8 @@ RUN apk add --no-cache \
     libpq-dev \
     icu-dev \
     libzip-dev \
-    oniguruma-dev
+    oniguruma-dev \
+    git
 
 # Install PHP extensions
 RUN docker-php-ext-install \
@@ -25,15 +26,11 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Copy application files
-COPY . .
-
-# Install dependencies (if composer.json exists)
-RUN if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader; fi
-
-# Set permissions
-RUN chown -R www-data:www-data /var/www/html
+# Copy entrypoint script
+COPY docker/php/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 9000
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["php-fpm"]
