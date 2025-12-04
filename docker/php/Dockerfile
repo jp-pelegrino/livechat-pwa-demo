@@ -1,11 +1,15 @@
 FROM php:8.3-fpm-alpine
 
-# Install dependencies
+# Install build dependencies and libraries required for PHP extensions
 RUN apk add --no-cache \
-    postgresql-dev \
+    autoconf \
+    g++ \
+    gcc \
+    make \
+    musl-dev \
+    libpq-dev \
     icu-dev \
     libzip-dev \
-    curl-dev \
     oniguruma-dev
 
 # Install PHP extensions
@@ -14,8 +18,7 @@ RUN docker-php-ext-install \
     opcache \
     intl \
     zip \
-    mbstring \
-    curl
+    mbstring
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
