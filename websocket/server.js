@@ -37,7 +37,16 @@ subscriber.on('pmessage', (pattern, channel, message) => {
     console.log(`Valkey message on ${channel}:`, message);
     
     // Extract room ID from channel (room:123)
+    // Validate the channel format before processing
+    if (!channel.startsWith('room:') || !channel.includes(':')) {
+        console.warn(`Ignoring message on unexpected channel format: ${channel}`);
+        return;
+    }
     const roomId = channel.split(':')[1];
+    if (!roomId) {
+        console.warn(`Invalid room ID in channel: ${channel}`);
+        return;
+    }
     
     // Broadcast to all clients in this room
     const roomClients = rooms.get(roomId) || new Set();
@@ -219,8 +228,11 @@ async function handleMessage(ws, message) {
         return;
     }
     
+    // Generate a unique temporary ID using timestamp + random component
+    const tempId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
     const payload = {
-        id: Date.now(), // Temporary ID, will be replaced by DB ID
+        id: tempId, // Temporary ID, will be replaced by DB ID
         roomId,
         username: username || ws.username || 'Anonymous',
         body,
