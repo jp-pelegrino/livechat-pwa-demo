@@ -114,6 +114,7 @@ docker compose exec php php spark migrate
 2. **PWA Installable** – Add-to-homescreen on mobile; works offline for cached assets.
 3. **Push Notifications** – VAPID-based Web Push when app is backgrounded or closed.
 4. **SSL Ready** – nginx configured for HTTPS and secure websocket (`wss://`).
+5. **Capacitor Integration** – Optional native iOS/Android app support with better icon handling and native features.
 
 ---
 
@@ -140,6 +141,7 @@ See [`.env.example`](../.env.example) for the full list. Key variables:
 - **[DOCKER.md](./DOCKER.md)** – Docker Compose, Dockerfile, and deployment notes.
 - **[CODEIGNITER.md](./CODEIGNITER.md)** – CI4 controllers, models, migrations, Valkey integration.
 - **[PWA.md](./PWA.md)** – Service worker, manifest, and push notification setup.
+- **[CAPACITOR.md](./CAPACITOR.md)** – Capacitor integration for native iOS/Android apps.
 
 ---
 

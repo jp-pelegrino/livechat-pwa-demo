@@ -11,10 +11,11 @@
     <meta name="format-detection" content="telephone=no">
     <title>LiveChat Demo</title>
     <link rel="manifest" href="/manifest.json">
-    <link rel="apple-touch-icon" href="/icon-192.png">
-    <link rel="apple-touch-icon" sizes="152x152" href="/icon-192.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="/icon-192.png">
-    <link rel="apple-touch-icon" sizes="167x167" href="/icon-192.png">
+    <link rel="apple-touch-icon" href="/icon-180.png">
+    <link rel="apple-touch-icon" sizes="120x120" href="/icon-120.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="/icon-152.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="/icon-167.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
     <style>
@@ -166,6 +167,9 @@
             </button>
         </div>
     </div>
+
+    <!-- Capacitor Core JS (auto-detects and loads only in native environment) -->
+    <script src="/capacitor/capacitor.js"></script>
 
     <script>
         const state = {
@@ -481,29 +485,100 @@
         }
 
         async function toggleNotifications() {
-            if (!('Notification' in window)) { alert('Notifications not supported'); return; }
-            if (state.pushSubscription) {
-                await state.pushSubscription.unsubscribe();
-                state.pushSubscription = null;
-                elements.notificationBtn.classList.remove('enabled');
-                elements.notificationBtn.textContent = '🔔 Notifications';
+            // Check if running in Capacitor native environment
+            const isCapacitor = window.Capacitor?.isNativePlatform?.();
+            
+            if (isCapacitor && window.Capacitor?.Plugins?.PushNotifications) {
+                // Use Capacitor PushNotifications for native apps
+                const PushNotifications = window.Capacitor.Plugins.PushNotifications;
+                
+                if (state.pushSubscription) {
+                    // Unregister push notifications
+                    state.pushSubscription = null;
+                    elements.notificationBtn.classList.remove('enabled');
+                    elements.notificationBtn.textContent = '🔔 Notifications';
+                } else {
+                    try {
+                        // Request permission
+                        let permStatus = await PushNotifications.requestPermissions();
+                        
+                        if (permStatus.receive === 'granted') {
+                            // Register for push notifications
+                            await PushNotifications.register();
+                            state.pushSubscription = true;
+                            elements.notificationBtn.classList.add('enabled');
+                            elements.notificationBtn.textContent = '🔔 On';
+                            
+                            // Listen for registration
+                            PushNotifications.addListener('registration', (token) => {
+                                console.log('Push registration success, token: ' + token.value);
+                            });
+                            
+                            // Listen for incoming notifications
+                            PushNotifications.addListener('pushNotificationReceived', (notification) => {
+                                console.log('Push notification received: ', notification);
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Error setting up push notifications:', e);
+                        alert('Failed to enable notifications');
+                    }
+                }
             } else {
-                const permission = await Notification.requestPermission();
-                if (permission === 'granted') {
-                    elements.notificationBtn.classList.add('enabled');
-                    elements.notificationBtn.textContent = '🔔 On';
+                // Use web notifications for PWA
+                if (!('Notification' in window)) { alert('Notifications not supported'); return; }
+                if (state.pushSubscription) {
+                    await state.pushSubscription.unsubscribe();
+                    state.pushSubscription = null;
+                    elements.notificationBtn.classList.remove('enabled');
+                    elements.notificationBtn.textContent = '🔔 Notifications';
+                } else {
+                    const permission = await Notification.requestPermission();
+                    if (permission === 'granted') {
+                        elements.notificationBtn.classList.add('enabled');
+                        elements.notificationBtn.textContent = '🔔 On';
+                    }
                 }
             }
         }
 
         function showNotification(msg) {
-            if (Notification.permission === 'granted') {
-                new Notification(msg.room ? `${msg.username} in ${msg.room}` : msg.username, { body: msg.body, icon: '/icon-192.png', badge: '/icon-192.png', tag: 'chat-message', renotify: true });
+            // Check if running in Capacitor
+            const isCapacitor = window.Capacitor?.isNativePlatform?.();
+            
+            if (isCapacitor && window.Capacitor?.Plugins?.LocalNotifications) {
+                // Use Capacitor LocalNotifications for native apps
+                const LocalNotifications = window.Capacitor.Plugins.LocalNotifications;
+                LocalNotifications.schedule({
+                    notifications: [{
+                        title: msg.room ? `${msg.username} in ${msg.room}` : msg.username,
+                        body: msg.body,
+                        id: Date.now(),
+                        schedule: { at: new Date(Date.now() + 1000) },
+                        sound: null,
+                        attachments: null,
+                        actionTypeId: '',
+                        extra: null
+                    }]
+                });
+            } else if (Notification.permission === 'granted') {
+                // Use web notifications for PWA
+                new Notification(msg.room ? `${msg.username} in ${msg.room}` : msg.username, { 
+                    body: msg.body, 
+                    icon: '/icon-192.png', 
+                    badge: '/icon-192.png', 
+                    tag: 'chat-message', 
+                    renotify: true 
+                });
             }
         }
 
         let deferredPrompt;
         function setupInstallPrompt() {
+            // Don't show install prompts if running in Capacitor native app
+            const isCapacitor = window.Capacitor?.isNativePlatform?.();
+            if (isCapacitor) return;
+            
             // For Chrome/Android - standard PWA install prompt
             window.addEventListener('beforeinstallprompt', e => {
                 e.preventDefault();
