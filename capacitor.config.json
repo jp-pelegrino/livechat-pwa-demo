@@ -4,9 +4,7 @@
   "webDir": "public",
   "server": {
     "url": "http://localhost",
-    "cleartext": true,
-    "androidScheme": "https",
-    "iosScheme": "https"
+    "cleartext": true
   },
   "ios": {
     "contentInset": "always",

@@ -552,8 +552,10 @@
         }
 
         function showNotification(msg) {
-            // For now, always use web notifications as they work in both contexts
-            // Native push notifications would be sent from the server via FCM/APNs
+            // Use web notifications for foreground messages in both PWA and Capacitor
+            // Background push notifications (when app is closed) are handled by:
+            // - Service Worker for PWA (via sw.js)
+            // - Native OS for Capacitor (via PushNotifications plugin)
             if (Notification.permission === 'granted') {
                 new Notification(msg.room ? `${msg.username} in ${msg.room}` : msg.username, { 
                     body: msg.body, 
