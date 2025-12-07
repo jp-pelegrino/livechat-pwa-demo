@@ -187,7 +187,11 @@
             typingTimeout: null,
             pushSubscription: null,
             isReconnecting: false,
-            notificationsEnabled: false
+            notificationsEnabled: false,
+            messageQueue: [], // Queue messages when disconnected
+            keepAliveInterval: null,
+            lastActivity: Date.now(),
+            isBackgrounded: false
         };
 
         const $ = id => document.getElementById(id);
@@ -256,6 +260,8 @@
             
             registerServiceWorker();
             setupInstallPrompt();
+            loadMessageQueue(); // Load any queued messages from previous session
+            setupBackgroundHandlers(); // Setup background/foreground detection
         }
 
         function logout() {
@@ -344,11 +350,19 @@
                         await loadMessages();
                         state.isReconnecting = false;
                     }
+                    // Send any queued messages
+                    processMessageQueue();
+                    // Start keepalive
+                    startKeepAlive();
                 };
-                state.ws.onmessage = e => handleWebSocketMessage(JSON.parse(e.data));
+                state.ws.onmessage = e => {
+                    state.lastActivity = Date.now();
+                    handleWebSocketMessage(JSON.parse(e.data));
+                };
                 state.ws.onclose = () => { 
                     state.isReconnecting = true;
                     updateStatus('error', 'Disconnected. Reconnecting...'); 
+                    stopKeepAlive();
                     scheduleReconnect(); 
                 };
                 state.ws.onerror = () => updateStatus('error', 'Connection error');
@@ -361,6 +375,95 @@
             state.isReconnecting = true;
             const delay = Math.min(state.wsReconnectDelay * Math.pow(2, state.wsReconnectAttempts - 1), 30000);
             setTimeout(connectWebSocket, delay);
+        }
+
+        function startKeepAlive() {
+            stopKeepAlive(); // Clear any existing interval
+            // Send ping every 15 seconds (more frequent for better connection maintenance)
+            state.keepAliveInterval = setInterval(() => {
+                if (state.ws?.readyState === WebSocket.OPEN) {
+                    state.ws.send(JSON.stringify({ type: 'ping' }));
+                    state.lastActivity = Date.now();
+                } else if (!state.isBackgrounded) {
+                    // If connection is lost and we're not backgrounded, try to reconnect
+                    connectWebSocket();
+                }
+            }, 15000);
+        }
+
+        function stopKeepAlive() {
+            if (state.keepAliveInterval) {
+                clearInterval(state.keepAliveInterval);
+                state.keepAliveInterval = null;
+            }
+        }
+
+        function queueMessage(messageData) {
+            // Add message to queue with timestamp
+            state.messageQueue.push({
+                ...messageData,
+                queuedAt: Date.now()
+            });
+            // Store in localStorage for persistence across page reloads
+            try {
+                localStorage.setItem('message_queue', JSON.stringify(state.messageQueue));
+            } catch (e) {
+                console.error('Failed to persist message queue:', e);
+            }
+        }
+
+        function processMessageQueue() {
+            if (state.messageQueue.length === 0) return;
+            
+            const queue = [...state.messageQueue];
+            state.messageQueue = [];
+            
+            // Try to send queued messages
+            queue.forEach(async (queuedMsg) => {
+                try {
+                    const res = await fetch(`/api/tickets/${queuedMsg.roomId}/messages`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: queuedMsg.username,
+                            body: queuedMsg.body
+                        })
+                    });
+                    if (res.ok) {
+                        const msg = await res.json();
+                        if (!state.messages.find(m => m.id === msg.id)) {
+                            state.messages.push(msg);
+                            state.lastMessageId = msg.id;
+                            renderMessages();
+                        }
+                    } else {
+                        // Re-queue if failed
+                        queueMessage(queuedMsg);
+                    }
+                } catch (e) {
+                    console.error('Failed to send queued message:', e);
+                    // Re-queue if failed
+                    queueMessage(queuedMsg);
+                }
+            });
+            
+            // Clear localStorage if queue is empty
+            if (state.messageQueue.length === 0) {
+                localStorage.removeItem('message_queue');
+            }
+        }
+
+        // Load queued messages from localStorage on init
+        function loadMessageQueue() {
+            try {
+                const stored = localStorage.getItem('message_queue');
+                if (stored) {
+                    state.messageQueue = JSON.parse(stored);
+                }
+            } catch (e) {
+                console.error('Failed to load message queue:', e);
+                state.messageQueue = [];
+            }
         }
 
         function handleWebSocketMessage(msg) {
@@ -433,13 +536,50 @@
             elements.sendBtn.disabled = true;
             elements.messageInput.value = '';
             autoResizeTextarea();
+            
+            // Check if we're connected
+            const isConnected = state.ws && state.ws.readyState === WebSocket.OPEN;
+            
             try {
-                const res = await fetch(`/api/tickets/${state.currentRoom}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: state.username, body: text }) });
+                const res = await fetch(`/api/tickets/${state.currentRoom}/messages`, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ username: state.username, body: text }) 
+                });
                 if (res.ok) {
                     const msg = await res.json();
-                    if (!state.messages.find(m => m.id === msg.id)) { state.messages.push(msg); state.lastMessageId = msg.id; renderMessages(); }
+                    if (!state.messages.find(m => m.id === msg.id)) { 
+                        state.messages.push(msg); 
+                        state.lastMessageId = msg.id; 
+                        renderMessages(); 
+                    }
+                } else {
+                    throw new Error('Failed to send message');
                 }
-            } catch (e) { console.error('Send error:', e); elements.messageInput.value = text; }
+            } catch (e) { 
+                console.error('Send error:', e); 
+                // Queue message if disconnected
+                if (!isConnected || !navigator.onLine) {
+                    queueMessage({
+                        username: state.username,
+                        body: text,
+                        roomId: state.currentRoom
+                    });
+                    // Show optimistic UI
+                    const tempMsg = {
+                        id: 'temp-' + Date.now(),
+                        username: state.username,
+                        body: text,
+                        created_at: new Date().toISOString(),
+                        temp: true
+                    };
+                    state.messages.push(tempMsg);
+                    renderMessages();
+                    updateStatus('error', 'Message queued (offline)');
+                } else {
+                    elements.messageInput.value = text;
+                }
+            }
             elements.sendBtn.disabled = false;
             elements.messageInput.focus();
         }
@@ -493,6 +633,44 @@
                         state.notificationsEnabled = true;
                         elements.notificationBtn.classList.add('enabled'); 
                         elements.notificationBtn.textContent = '🔔 On'; 
+                    }
+                    
+                    // Listen for messages from service worker
+                    navigator.serviceWorker.addEventListener('message', event => {
+                        if (event.data.type === 'sync-messages') {
+                            // Service worker is asking us to sync messages
+                            processMessageQueue();
+                        } else if (event.data.type === 'check-messages') {
+                            // Check for new messages
+                            if (state.username && state.currentRoom) {
+                                loadMessages();
+                            }
+                        }
+                    });
+                    
+                    // Register for background sync if supported
+                    if ('sync' in reg) {
+                        try {
+                            await reg.sync.register('sync-messages');
+                        } catch (e) {
+                            console.log('Background sync not supported:', e);
+                        }
+                    }
+                    
+                    // Register for periodic sync if supported (Chrome only)
+                    if ('periodicSync' in reg) {
+                        try {
+                            const status = await navigator.permissions.query({
+                                name: 'periodic-background-sync',
+                            });
+                            if (status.state === 'granted') {
+                                await reg.periodicSync.register('check-messages', {
+                                    minInterval: 60 * 1000, // 1 minute
+                                });
+                            }
+                        } catch (e) {
+                            console.log('Periodic background sync not supported:', e);
+                        }
                     }
                 } catch (e) { console.error('SW registration failed:', e); }
             }
@@ -608,13 +786,81 @@
             }
         }
 
-        setInterval(() => { if (state.ws?.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ type: 'ping' })); }, 30000);
-        document.addEventListener('visibilitychange', () => { 
-            if (!document.hidden && state.username && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
-                state.isReconnecting = true;
-                connectWebSocket(); 
-            }
-        });
+        // Background/Foreground detection and handling
+        function setupBackgroundHandlers() {
+            // Page Visibility API - handle backgrounding
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    // App is backgrounded
+                    state.isBackgrounded = true;
+                    console.log('App backgrounded at', new Date().toISOString());
+                } else {
+                    // App is foregrounded
+                    state.isBackgrounded = false;
+                    console.log('App foregrounded at', new Date().toISOString());
+                    
+                    // Reconnect if needed
+                    if (state.username && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
+                        state.isReconnecting = true;
+                        connectWebSocket();
+                    }
+                    
+                    // Process any queued messages
+                    if (state.messageQueue.length > 0) {
+                        processMessageQueue();
+                    }
+                    
+                    // Reload messages to catch up
+                    if (state.username && state.currentRoom) {
+                        loadMessages();
+                    }
+                }
+            });
+
+            // Detect when app goes into background (iOS Safari)
+            window.addEventListener('pagehide', (event) => {
+                state.isBackgrounded = true;
+                console.log('Page hide event');
+            });
+
+            // Detect when app comes back from background
+            window.addEventListener('pageshow', (event) => {
+                if (event.persisted) {
+                    // Page was restored from cache
+                    state.isBackgrounded = false;
+                    console.log('Page show event (from cache)');
+                    
+                    if (state.username && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
+                        connectWebSocket();
+                    }
+                }
+            });
+
+            // Online/offline detection
+            window.addEventListener('online', () => {
+                console.log('Network online');
+                if (state.username && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
+                    connectWebSocket();
+                }
+                if (state.messageQueue.length > 0) {
+                    processMessageQueue();
+                }
+            });
+
+            window.addEventListener('offline', () => {
+                console.log('Network offline');
+                updateStatus('error', 'No internet connection');
+            });
+
+            // Handle page unload
+            window.addEventListener('beforeunload', () => {
+                // Clean up websocket
+                if (state.ws) {
+                    state.ws.close();
+                }
+                stopKeepAlive();
+            });
+        }
 
         init();
     </script>

@@ -102,3 +102,45 @@ self.addEventListener('notificationclick', event => {
             })
     );
 });
+
+// Background Sync - handle message sending when back online
+self.addEventListener('sync', event => {
+    if (event.tag === 'sync-messages') {
+        event.waitUntil(syncMessages());
+    }
+});
+
+async function syncMessages() {
+    // This will be triggered when the app comes back online
+    // The actual message queue is managed by the client
+    const clients = await self.clients.matchAll();
+    clients.forEach(client => {
+        client.postMessage({
+            type: 'sync-messages'
+        });
+    });
+}
+
+// Handle messages from the client
+self.addEventListener('message', event => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
+});
+
+// Periodic Background Sync (if supported)
+self.addEventListener('periodicsync', event => {
+    if (event.tag === 'check-messages') {
+        event.waitUntil(checkForNewMessages());
+    }
+});
+
+async function checkForNewMessages() {
+    // Notify clients to check for new messages
+    const clients = await self.clients.matchAll();
+    clients.forEach(client => {
+        client.postMessage({
+            type: 'check-messages'
+        });
+    });
+}
