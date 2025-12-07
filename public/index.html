@@ -3,11 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="0;url=/">
     <title>LiveChat Demo</title>
     <script>
-        // Redirect to the main app served by CodeIgniter
-        window.location.href = '/';
+        // When running as Capacitor app, redirect to CodeIgniter entry point
+        // The index.php will handle the actual app routing
+        if (window.location.pathname === '/index.html' || window.location.pathname === '/') {
+            // Prevent infinite loop by checking if we're already being redirected
+            if (!sessionStorage.getItem('redirected')) {
+                sessionStorage.setItem('redirected', '1');
+                window.location.replace('/index.php');
+            }
+        }
     </script>
 </head>
 <body>

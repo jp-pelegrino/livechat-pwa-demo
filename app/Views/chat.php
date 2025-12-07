@@ -186,12 +186,14 @@
             typingUsers: new Set(),
             typingTimeout: null,
             pushSubscription: null,
-            isReconnecting: false
+            isReconnecting: false,
+            notificationsEnabled: false
         };
 
         const $ = id => document.getElementById(id);
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        const isCapacitor = window.Capacitor?.isNativePlatform?.() || false;
         
         const elements = {
             modal: $('usernameModal'), usernameInput: $('usernameInput'), joinBtn: $('joinBtn'),
@@ -479,21 +481,24 @@
                 try {
                     const reg = await navigator.serviceWorker.register('/sw.js');
                     const sub = await reg.pushManager.getSubscription();
-                    if (sub) { state.pushSubscription = sub; elements.notificationBtn.classList.add('enabled'); elements.notificationBtn.textContent = '🔔 On'; }
+                    if (sub) { 
+                        state.pushSubscription = sub; 
+                        state.notificationsEnabled = true;
+                        elements.notificationBtn.classList.add('enabled'); 
+                        elements.notificationBtn.textContent = '🔔 On'; 
+                    }
                 } catch (e) { console.error('SW registration failed:', e); }
             }
         }
 
         async function toggleNotifications() {
-            // Check if running in Capacitor native environment
-            const isCapacitor = window.Capacitor?.isNativePlatform?.();
-            
             if (isCapacitor && window.Capacitor?.Plugins?.PushNotifications) {
                 // Use Capacitor PushNotifications for native apps
                 const PushNotifications = window.Capacitor.Plugins.PushNotifications;
                 
-                if (state.pushSubscription) {
+                if (state.notificationsEnabled) {
                     // Unregister push notifications
+                    state.notificationsEnabled = false;
                     state.pushSubscription = null;
                     elements.notificationBtn.classList.remove('enabled');
                     elements.notificationBtn.textContent = '🔔 Notifications';
@@ -505,7 +510,7 @@
                         if (permStatus.receive === 'granted') {
                             // Register for push notifications
                             await PushNotifications.register();
-                            state.pushSubscription = true;
+                            state.notificationsEnabled = true;
                             elements.notificationBtn.classList.add('enabled');
                             elements.notificationBtn.textContent = '🔔 On';
                             
@@ -527,14 +532,18 @@
             } else {
                 // Use web notifications for PWA
                 if (!('Notification' in window)) { alert('Notifications not supported'); return; }
-                if (state.pushSubscription) {
-                    await state.pushSubscription.unsubscribe();
+                if (state.notificationsEnabled) {
+                    if (state.pushSubscription) {
+                        await state.pushSubscription.unsubscribe();
+                    }
+                    state.notificationsEnabled = false;
                     state.pushSubscription = null;
                     elements.notificationBtn.classList.remove('enabled');
                     elements.notificationBtn.textContent = '🔔 Notifications';
                 } else {
                     const permission = await Notification.requestPermission();
                     if (permission === 'granted') {
+                        state.notificationsEnabled = true;
                         elements.notificationBtn.classList.add('enabled');
                         elements.notificationBtn.textContent = '🔔 On';
                     }
@@ -559,7 +568,6 @@
         let deferredPrompt;
         function setupInstallPrompt() {
             // Don't show install prompts if running in Capacitor native app
-            const isCapacitor = window.Capacitor?.isNativePlatform?.();
             if (isCapacitor) return;
             
             // For Chrome/Android - standard PWA install prompt
