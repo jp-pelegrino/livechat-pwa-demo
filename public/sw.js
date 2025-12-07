@@ -88,23 +88,11 @@ registerRoute(
 );
 
 // Background sync for failed POST requests (e.g., messages)
+// Workbox will automatically retry failed requests with exponential backoff
 const bgSyncPlugin = new BackgroundSyncPlugin('message-queue', {
-    maxRetentionTime: 24 * 60, // Retry for up to 24 hours (in minutes)
-    onSync: async ({ queue }) => {
-        let entry;
-        while ((entry = await queue.shiftRequest())) {
-            try {
-                await fetch(entry.request);
-                console.log('Replay successful for request', entry.request.url);
-            } catch (error) {
-                console.error('Replay failed for request', entry.request.url, error);
-                // Put the entry back in the queue to retry later
-                await queue.unshiftRequest(entry);
-                throw error;
-            }
-        }
-        console.log('Replay complete!');
-    },
+    maxRetentionTime: 24 * 60, // Retry for up to 24 hours (specified in minutes)
+    // Workbox handles retries automatically with built-in exponential backoff
+    // No need for custom onSync handler - let Workbox manage the queue
 });
 
 // Use NetworkOnly with background sync for API POST requests
