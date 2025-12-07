@@ -152,10 +152,11 @@ npm run cap:open:android
 
 ## Configuration
 
-### Server URL for Development
+### Server URL Configuration
 
-In `capacitor.config.json`, the server URL is set for development:
+The repository includes two Capacitor configurations:
 
+**Development (`capacitor.config.json`):**
 ```json
 {
   "server": {
@@ -164,11 +165,20 @@ In `capacitor.config.json`, the server URL is set for development:
   }
 }
 ```
+- Loads content from local development server
+- `cleartext: true` allows HTTP for local development
+- **Note:** For iOS, consider using `https://` or a tunneling service (ngrok, localtunnel) for testing secure features like push notifications
 
-For production builds:
-- Remove the `server.url` configuration
-- The app will load from bundled web assets
-- Configure your production API endpoint in the app
+**Production (`capacitor.config.production.json`):**
+- No `server` configuration
+- App loads from bundled web assets
+- Use this for App Store/Play Store builds
+
+To switch to production config:
+```bash
+cp capacitor.config.production.json capacitor.config.json
+npm run cap:sync
+```
 
 ### Push Notifications
 

@@ -543,26 +543,9 @@
         }
 
         function showNotification(msg) {
-            // Check if running in Capacitor
-            const isCapacitor = window.Capacitor?.isNativePlatform?.();
-            
-            if (isCapacitor && window.Capacitor?.Plugins?.LocalNotifications) {
-                // Use Capacitor LocalNotifications for native apps
-                const LocalNotifications = window.Capacitor.Plugins.LocalNotifications;
-                LocalNotifications.schedule({
-                    notifications: [{
-                        title: msg.room ? `${msg.username} in ${msg.room}` : msg.username,
-                        body: msg.body,
-                        id: Date.now(),
-                        schedule: { at: new Date(Date.now() + 1000) },
-                        sound: null,
-                        attachments: null,
-                        actionTypeId: '',
-                        extra: null
-                    }]
-                });
-            } else if (Notification.permission === 'granted') {
-                // Use web notifications for PWA
+            // For now, always use web notifications as they work in both contexts
+            // Native push notifications would be sent from the server via FCM/APNs
+            if (Notification.permission === 'granted') {
                 new Notification(msg.room ? `${msg.username} in ${msg.room}` : msg.username, { 
                     body: msg.body, 
                     icon: '/icon-192.png', 
