@@ -1,0 +1,31 @@
+{
+  "appId": "com.livechat.demo",
+  "appName": "LiveChat Demo",
+  "webDir": "public",
+  "server": {
+    "url": "http://localhost",
+    "cleartext": true
+  },
+  "ios": {
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": false,
+    "scrollEnabled": true,
+    "backgroundColor": "#0d6efd"
+  },
+  "android": {
+    "backgroundColor": "#0d6efd",
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "backgroundColor": "#0d6efd",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false
+    }
+  }
+}

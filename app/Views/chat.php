@@ -11,10 +11,11 @@
     <meta name="format-detection" content="telephone=no">
     <title>LiveChat Demo</title>
     <link rel="manifest" href="/manifest.json">
-    <link rel="apple-touch-icon" href="/icon-192.png">
-    <link rel="apple-touch-icon" sizes="152x152" href="/icon-192.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="/icon-192.png">
-    <link rel="apple-touch-icon" sizes="167x167" href="/icon-192.png">
+    <link rel="apple-touch-icon" href="/icon-180.png">
+    <link rel="apple-touch-icon" sizes="120x120" href="/icon-120.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="/icon-152.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="/icon-167.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png">
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
     <style>
@@ -167,6 +168,9 @@
         </div>
     </div>
 
+    <!-- Capacitor Core JS (auto-detects and loads only in native environment) -->
+    <script src="/capacitor/capacitor.js"></script>
+
     <script>
         const state = {
             username: localStorage.getItem('chat_username') || '',
@@ -182,12 +186,25 @@
             typingUsers: new Set(),
             typingTimeout: null,
             pushSubscription: null,
-            isReconnecting: false
+            isReconnecting: false,
+            notificationsEnabled: false,
+            messageQueue: [], // Queue messages when disconnected
+            keepAliveInterval: null,
+            lastActivity: Date.now(),
+            isBackgrounded: false
         };
 
         const $ = id => document.getElementById(id);
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        
+        // Detect if running in Capacitor native environment with error handling
+        let isCapacitor = false;
+        try {
+            isCapacitor = window.Capacitor?.isNativePlatform?.() || false;
+        } catch (e) {
+            console.warn('Error detecting Capacitor environment:', e);
+        }
         
         const elements = {
             modal: $('usernameModal'), usernameInput: $('usernameInput'), joinBtn: $('joinBtn'),
@@ -243,6 +260,8 @@
             
             registerServiceWorker();
             setupInstallPrompt();
+            loadMessageQueue(); // Load any queued messages from previous session
+            setupBackgroundHandlers(); // Setup background/foreground detection
         }
 
         function logout() {
@@ -331,11 +350,19 @@
                         await loadMessages();
                         state.isReconnecting = false;
                     }
+                    // Send any queued messages
+                    processMessageQueue();
+                    // Start keepalive
+                    startKeepAlive();
                 };
-                state.ws.onmessage = e => handleWebSocketMessage(JSON.parse(e.data));
+                state.ws.onmessage = e => {
+                    state.lastActivity = Date.now();
+                    handleWebSocketMessage(JSON.parse(e.data));
+                };
                 state.ws.onclose = () => { 
                     state.isReconnecting = true;
                     updateStatus('error', 'Disconnected. Reconnecting...'); 
+                    stopKeepAlive();
                     scheduleReconnect(); 
                 };
                 state.ws.onerror = () => updateStatus('error', 'Connection error');
@@ -348,6 +375,100 @@
             state.isReconnecting = true;
             const delay = Math.min(state.wsReconnectDelay * Math.pow(2, state.wsReconnectAttempts - 1), 30000);
             setTimeout(connectWebSocket, delay);
+        }
+
+        function startKeepAlive() {
+            stopKeepAlive(); // Clear any existing interval
+            // Send ping every 15 seconds (more frequent for better connection maintenance)
+            state.keepAliveInterval = setInterval(() => {
+                if (state.ws?.readyState === WebSocket.OPEN) {
+                    state.ws.send(JSON.stringify({ type: 'ping' }));
+                    state.lastActivity = Date.now();
+                } else if (!state.isBackgrounded && !state.isReconnecting) {
+                    // If connection is lost and we're not backgrounded or already reconnecting, try to reconnect
+                    connectWebSocket();
+                }
+            }, 15000);
+        }
+
+        function stopKeepAlive() {
+            if (state.keepAliveInterval) {
+                clearInterval(state.keepAliveInterval);
+                state.keepAliveInterval = null;
+            }
+        }
+
+        function queueMessage(messageData) {
+            // Add message to queue with timestamp
+            state.messageQueue.push({
+                ...messageData,
+                queuedAt: Date.now()
+            });
+            // Store in localStorage for persistence across page reloads
+            try {
+                localStorage.setItem('message_queue', JSON.stringify(state.messageQueue));
+            } catch (e) {
+                console.error('Failed to persist message queue:', e);
+            }
+        }
+
+        async function processMessageQueue() {
+            if (state.messageQueue.length === 0) return;
+            
+            const queue = [...state.messageQueue];
+            state.messageQueue = [];
+            
+            // Try to send queued messages using for...of to properly await
+            for (const queuedMsg of queue) {
+                try {
+                    const res = await fetch(`/api/tickets/${queuedMsg.roomId}/messages`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: queuedMsg.username,
+                            body: queuedMsg.body
+                        })
+                    });
+                    if (res.ok) {
+                        const msg = await res.json();
+                        // Remove temporary message if it exists
+                        state.messages = state.messages.filter(m => !m.temp || m.body !== msg.body);
+                        // Add real message
+                        if (!state.messages.find(m => m.id === msg.id)) {
+                            state.messages.push(msg);
+                            state.lastMessageId = msg.id;
+                        }
+                    } else {
+                        // Re-queue if failed
+                        queueMessage(queuedMsg);
+                    }
+                } catch (e) {
+                    console.error('Failed to send queued message:', e);
+                    // Re-queue if failed
+                    queueMessage(queuedMsg);
+                }
+            }
+            
+            // Re-render messages after processing queue
+            renderMessages();
+            
+            // Clear localStorage if queue is empty
+            if (state.messageQueue.length === 0) {
+                localStorage.removeItem('message_queue');
+            }
+        }
+
+        // Load queued messages from localStorage on init
+        function loadMessageQueue() {
+            try {
+                const stored = localStorage.getItem('message_queue');
+                if (stored) {
+                    state.messageQueue = JSON.parse(stored);
+                }
+            } catch (e) {
+                console.error('Failed to load message queue:', e);
+                state.messageQueue = [];
+            }
         }
 
         function handleWebSocketMessage(msg) {
@@ -420,13 +541,50 @@
             elements.sendBtn.disabled = true;
             elements.messageInput.value = '';
             autoResizeTextarea();
+            
+            // Check if we're connected
+            const isConnected = state.ws && state.ws.readyState === WebSocket.OPEN;
+            
             try {
-                const res = await fetch(`/api/tickets/${state.currentRoom}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: state.username, body: text }) });
+                const res = await fetch(`/api/tickets/${state.currentRoom}/messages`, { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ username: state.username, body: text }) 
+                });
                 if (res.ok) {
                     const msg = await res.json();
-                    if (!state.messages.find(m => m.id === msg.id)) { state.messages.push(msg); state.lastMessageId = msg.id; renderMessages(); }
+                    if (!state.messages.find(m => m.id === msg.id)) { 
+                        state.messages.push(msg); 
+                        state.lastMessageId = msg.id; 
+                        renderMessages(); 
+                    }
+                } else {
+                    throw new Error('Failed to send message');
                 }
-            } catch (e) { console.error('Send error:', e); elements.messageInput.value = text; }
+            } catch (e) { 
+                console.error('Send error:', e); 
+                // Queue message if disconnected
+                if (!isConnected || !navigator.onLine) {
+                    queueMessage({
+                        username: state.username,
+                        body: text,
+                        roomId: state.currentRoom
+                    });
+                    // Show optimistic UI
+                    const tempMsg = {
+                        id: 'temp-' + Date.now(),
+                        username: state.username,
+                        body: text,
+                        created_at: new Date().toISOString(),
+                        temp: true
+                    };
+                    state.messages.push(tempMsg);
+                    renderMessages();
+                    updateStatus('error', 'Message queued (offline)');
+                } else {
+                    elements.messageInput.value = text;
+                }
+            }
             elements.sendBtn.disabled = false;
             elements.messageInput.focus();
         }
@@ -473,37 +631,186 @@
         async function registerServiceWorker() {
             if ('serviceWorker' in navigator) {
                 try {
-                    const reg = await navigator.serviceWorker.register('/sw.js');
+                    const reg = await navigator.serviceWorker.register('/sw.js', {
+                        updateViaCache: 'none' // Always check for updates
+                    });
+                    
+                    console.log('Service Worker registered:', reg);
+                    
+                    // Wait for the service worker to be ready
+                    await navigator.serviceWorker.ready;
+                    
                     const sub = await reg.pushManager.getSubscription();
-                    if (sub) { state.pushSubscription = sub; elements.notificationBtn.classList.add('enabled'); elements.notificationBtn.textContent = '🔔 On'; }
-                } catch (e) { console.error('SW registration failed:', e); }
+                    if (sub) { 
+                        state.pushSubscription = sub; 
+                        state.notificationsEnabled = true;
+                        elements.notificationBtn.classList.add('enabled'); 
+                        elements.notificationBtn.textContent = '🔔 On'; 
+                    }
+                    
+                    // Listen for messages from service worker
+                    navigator.serviceWorker.addEventListener('message', event => {
+                        console.log('Message from SW:', event.data);
+                        
+                        if (event.data.type === 'sync-messages') {
+                            // Service worker is asking us to sync messages
+                            processMessageQueue();
+                        } else if (event.data.type === 'check-messages') {
+                            // Check for new messages
+                            if (state.username && state.currentRoom) {
+                                loadMessages();
+                            }
+                        } else if (event.data.type === 'push-received') {
+                            // Push notification received while app is open
+                            const data = event.data.data;
+                            if (data.roomId === state.currentRoom) {
+                                // Reload messages for current room
+                                loadMessages();
+                            }
+                        } else if (event.data.type === 'switch-room') {
+                            // User clicked notification for a different room
+                            const roomId = event.data.roomId;
+                            if (roomId && roomId !== state.currentRoom) {
+                                switchRoom(roomId);
+                            }
+                        }
+                    });
+                    
+                    // Check for service worker updates
+                    reg.addEventListener('updatefound', () => {
+                        const newWorker = reg.installing;
+                        console.log('Service Worker update found');
+                        
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // New service worker installed, prompt user to reload
+                                console.log('New Service Worker installed');
+                                // You can show a toast/notification here to reload the app
+                            }
+                        });
+                    });
+                    
+                    // Register for background sync if supported
+                    if ('sync' in reg) {
+                        try {
+                            await reg.sync.register('sync-messages');
+                            console.log('Background sync registered');
+                        } catch (e) {
+                            console.log('Background sync not supported:', e);
+                        }
+                    }
+                    
+                    // Register for periodic sync if supported (Chrome only)
+                    if ('periodicSync' in reg) {
+                        try {
+                            const status = await navigator.permissions.query({
+                                name: 'periodic-background-sync',
+                            });
+                            if (status.state === 'granted') {
+                                await reg.periodicSync.register('check-messages', {
+                                    minInterval: 60 * 1000, // 1 minute
+                                });
+                                console.log('Periodic background sync registered');
+                            }
+                        } catch (e) {
+                            console.log('Periodic background sync not supported:', e);
+                        }
+                    }
+                } catch (e) { 
+                    console.error('SW registration failed:', e); 
+                }
             }
         }
 
+        // Flag to track if Capacitor listeners are registered
+        let capacitorListenersRegistered = false;
+        
         async function toggleNotifications() {
-            if (!('Notification' in window)) { alert('Notifications not supported'); return; }
-            if (state.pushSubscription) {
-                await state.pushSubscription.unsubscribe();
-                state.pushSubscription = null;
-                elements.notificationBtn.classList.remove('enabled');
-                elements.notificationBtn.textContent = '🔔 Notifications';
+            if (isCapacitor && window.Capacitor?.Plugins?.PushNotifications) {
+                // Use Capacitor PushNotifications for native apps
+                const PushNotifications = window.Capacitor.Plugins.PushNotifications;
+                
+                if (state.notificationsEnabled) {
+                    // Unregister push notifications
+                    state.notificationsEnabled = false;
+                    state.pushSubscription = null;
+                    elements.notificationBtn.classList.remove('enabled');
+                    elements.notificationBtn.textContent = '🔔 Notifications';
+                } else {
+                    try {
+                        // Request permission
+                        let permissionStatus = await PushNotifications.requestPermissions();
+                        
+                        if (permissionStatus.receive === 'granted') {
+                            // Register for push notifications
+                            await PushNotifications.register();
+                            state.notificationsEnabled = true;
+                            elements.notificationBtn.classList.add('enabled');
+                            elements.notificationBtn.textContent = '🔔 On';
+                            
+                            // Register listeners only once
+                            if (!capacitorListenersRegistered) {
+                                // Listen for registration
+                                PushNotifications.addListener('registration', (token) => {
+                                    console.log('Push registration success, token: ' + token.value);
+                                });
+                                
+                                // Listen for incoming notifications
+                                PushNotifications.addListener('pushNotificationReceived', (notification) => {
+                                    console.log('Push notification received: ', notification);
+                                });
+                                
+                                capacitorListenersRegistered = true;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error setting up push notifications:', e);
+                        alert('Failed to enable notifications. Please check your device settings and try again.');
+                    }
+                }
             } else {
-                const permission = await Notification.requestPermission();
-                if (permission === 'granted') {
-                    elements.notificationBtn.classList.add('enabled');
-                    elements.notificationBtn.textContent = '🔔 On';
+                // Use web notifications for PWA
+                if (!('Notification' in window)) { alert('Notifications not supported'); return; }
+                if (state.notificationsEnabled) {
+                    if (state.pushSubscription) {
+                        await state.pushSubscription.unsubscribe();
+                    }
+                    state.notificationsEnabled = false;
+                    state.pushSubscription = null;
+                    elements.notificationBtn.classList.remove('enabled');
+                    elements.notificationBtn.textContent = '🔔 Notifications';
+                } else {
+                    const permission = await Notification.requestPermission();
+                    if (permission === 'granted') {
+                        state.notificationsEnabled = true;
+                        elements.notificationBtn.classList.add('enabled');
+                        elements.notificationBtn.textContent = '🔔 On';
+                    }
                 }
             }
         }
 
         function showNotification(msg) {
+            // Use web notifications for foreground messages in both PWA and Capacitor
+            // Background push notifications (when app is closed) are handled by:
+            // - Service Worker for PWA (via sw.js)
+            // - Native OS for Capacitor (via PushNotifications plugin)
             if (Notification.permission === 'granted') {
-                new Notification(msg.room ? `${msg.username} in ${msg.room}` : msg.username, { body: msg.body, icon: '/icon-192.png', badge: '/icon-192.png', tag: 'chat-message', renotify: true });
+                new Notification(msg.room ? `${msg.username} in ${msg.room}` : msg.username, { 
+                    body: msg.body, 
+                    icon: '/icon-192.png', 
+                    badge: '/icon-192.png', 
+                    tag: 'chat-message', 
+                    renotify: true 
+                });
             }
         }
 
         let deferredPrompt;
         function setupInstallPrompt() {
+            // Don't show install prompts if running in Capacitor native app
+            if (isCapacitor) return;
+            
             // For Chrome/Android - standard PWA install prompt
             window.addEventListener('beforeinstallprompt', e => {
                 e.preventDefault();
@@ -525,13 +832,81 @@
             }
         }
 
-        setInterval(() => { if (state.ws?.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify({ type: 'ping' })); }, 30000);
-        document.addEventListener('visibilitychange', () => { 
-            if (!document.hidden && state.username && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
-                state.isReconnecting = true;
-                connectWebSocket(); 
-            }
-        });
+        // Background/Foreground detection and handling
+        function setupBackgroundHandlers() {
+            // Page Visibility API - handle backgrounding
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    // App is backgrounded
+                    state.isBackgrounded = true;
+                    console.log('App backgrounded at', new Date().toISOString());
+                } else {
+                    // App is foregrounded
+                    state.isBackgrounded = false;
+                    console.log('App foregrounded at', new Date().toISOString());
+                    
+                    // Reconnect if needed
+                    if (state.username && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
+                        state.isReconnecting = true;
+                        connectWebSocket();
+                    }
+                    
+                    // Process any queued messages
+                    if (state.messageQueue.length > 0) {
+                        processMessageQueue();
+                    }
+                    
+                    // Reload messages to catch up
+                    if (state.username && state.currentRoom) {
+                        loadMessages();
+                    }
+                }
+            });
+
+            // Detect when app goes into background (iOS Safari)
+            window.addEventListener('pagehide', (event) => {
+                state.isBackgrounded = true;
+                console.log('Page hide event');
+            });
+
+            // Detect when app comes back from background
+            window.addEventListener('pageshow', (event) => {
+                if (event.persisted) {
+                    // Page was restored from cache
+                    state.isBackgrounded = false;
+                    console.log('Page show event (from cache)');
+                    
+                    if (state.username && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
+                        connectWebSocket();
+                    }
+                }
+            });
+
+            // Online/offline detection
+            window.addEventListener('online', () => {
+                console.log('Network online');
+                if (state.username && (!state.ws || state.ws.readyState !== WebSocket.OPEN)) {
+                    connectWebSocket();
+                }
+                if (state.messageQueue.length > 0) {
+                    processMessageQueue();
+                }
+            });
+
+            window.addEventListener('offline', () => {
+                console.log('Network offline');
+                updateStatus('error', 'No internet connection');
+            });
+
+            // Handle page unload
+            window.addEventListener('beforeunload', () => {
+                // Clean up websocket
+                if (state.ws) {
+                    state.ws.close();
+                }
+                stopKeepAlive();
+            });
+        }
 
         init();
     </script>
