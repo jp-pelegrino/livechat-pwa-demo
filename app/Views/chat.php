@@ -498,6 +498,9 @@
             }
         }
 
+        // Flag to track if Capacitor listeners are registered
+        let capacitorListenersRegistered = false;
+        
         async function toggleNotifications() {
             if (isCapacitor && window.Capacitor?.Plugins?.PushNotifications) {
                 // Use Capacitor PushNotifications for native apps
@@ -521,19 +524,24 @@
                             elements.notificationBtn.classList.add('enabled');
                             elements.notificationBtn.textContent = '🔔 On';
                             
-                            // Listen for registration
-                            PushNotifications.addListener('registration', (token) => {
-                                console.log('Push registration success, token: ' + token.value);
-                            });
-                            
-                            // Listen for incoming notifications
-                            PushNotifications.addListener('pushNotificationReceived', (notification) => {
-                                console.log('Push notification received: ', notification);
-                            });
+                            // Register listeners only once
+                            if (!capacitorListenersRegistered) {
+                                // Listen for registration
+                                PushNotifications.addListener('registration', (token) => {
+                                    console.log('Push registration success, token: ' + token.value);
+                                });
+                                
+                                // Listen for incoming notifications
+                                PushNotifications.addListener('pushNotificationReceived', (notification) => {
+                                    console.log('Push notification received: ', notification);
+                                });
+                                
+                                capacitorListenersRegistered = true;
+                            }
                         }
                     } catch (e) {
                         console.error('Error setting up push notifications:', e);
-                        alert('Failed to enable notifications');
+                        alert('Failed to enable notifications. Please check your device settings and try again.');
                     }
                 }
             } else {
