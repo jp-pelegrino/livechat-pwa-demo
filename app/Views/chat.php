@@ -193,7 +193,14 @@
         const $ = id => document.getElementById(id);
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-        const isCapacitor = window.Capacitor?.isNativePlatform?.() || false;
+        
+        // Detect if running in Capacitor native environment with error handling
+        let isCapacitor = false;
+        try {
+            isCapacitor = window.Capacitor?.isNativePlatform?.() || false;
+        } catch (e) {
+            console.warn('Error detecting Capacitor environment:', e);
+        }
         
         const elements = {
             modal: $('usernameModal'), usernameInput: $('usernameInput'), joinBtn: $('joinBtn'),
@@ -505,9 +512,9 @@
                 } else {
                     try {
                         // Request permission
-                        let permStatus = await PushNotifications.requestPermissions();
+                        let permissionStatus = await PushNotifications.requestPermissions();
                         
-                        if (permStatus.receive === 'granted') {
+                        if (permissionStatus.receive === 'granted') {
                             // Register for push notifications
                             await PushNotifications.register();
                             state.notificationsEnabled = true;
