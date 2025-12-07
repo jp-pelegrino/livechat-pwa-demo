@@ -384,8 +384,8 @@
                 if (state.ws?.readyState === WebSocket.OPEN) {
                     state.ws.send(JSON.stringify({ type: 'ping' }));
                     state.lastActivity = Date.now();
-                } else if (!state.isBackgrounded) {
-                    // If connection is lost and we're not backgrounded, try to reconnect
+                } else if (!state.isBackgrounded && !state.isReconnecting) {
+                    // If connection is lost and we're not backgrounded or already reconnecting, try to reconnect
                     connectWebSocket();
                 }
             }, 15000);
@@ -412,14 +412,14 @@
             }
         }
 
-        function processMessageQueue() {
+        async function processMessageQueue() {
             if (state.messageQueue.length === 0) return;
             
             const queue = [...state.messageQueue];
             state.messageQueue = [];
             
-            // Try to send queued messages
-            queue.forEach(async (queuedMsg) => {
+            // Try to send queued messages using for...of to properly await
+            for (const queuedMsg of queue) {
                 try {
                     const res = await fetch(`/api/tickets/${queuedMsg.roomId}/messages`, {
                         method: 'POST',
@@ -431,10 +431,12 @@
                     });
                     if (res.ok) {
                         const msg = await res.json();
+                        // Remove temporary message if it exists
+                        state.messages = state.messages.filter(m => !m.temp || m.body !== msg.body);
+                        // Add real message
                         if (!state.messages.find(m => m.id === msg.id)) {
                             state.messages.push(msg);
                             state.lastMessageId = msg.id;
-                            renderMessages();
                         }
                     } else {
                         // Re-queue if failed
@@ -445,7 +447,10 @@
                     // Re-queue if failed
                     queueMessage(queuedMsg);
                 }
-            });
+            }
+            
+            // Re-render messages after processing queue
+            renderMessages();
             
             // Clear localStorage if queue is empty
             if (state.messageQueue.length === 0) {
@@ -626,7 +631,15 @@
         async function registerServiceWorker() {
             if ('serviceWorker' in navigator) {
                 try {
-                    const reg = await navigator.serviceWorker.register('/sw.js');
+                    const reg = await navigator.serviceWorker.register('/sw.js', {
+                        updateViaCache: 'none' // Always check for updates
+                    });
+                    
+                    console.log('Service Worker registered:', reg);
+                    
+                    // Wait for the service worker to be ready
+                    await navigator.serviceWorker.ready;
+                    
                     const sub = await reg.pushManager.getSubscription();
                     if (sub) { 
                         state.pushSubscription = sub; 
@@ -637,6 +650,8 @@
                     
                     // Listen for messages from service worker
                     navigator.serviceWorker.addEventListener('message', event => {
+                        console.log('Message from SW:', event.data);
+                        
                         if (event.data.type === 'sync-messages') {
                             // Service worker is asking us to sync messages
                             processMessageQueue();
@@ -645,13 +660,41 @@
                             if (state.username && state.currentRoom) {
                                 loadMessages();
                             }
+                        } else if (event.data.type === 'push-received') {
+                            // Push notification received while app is open
+                            const data = event.data.data;
+                            if (data.roomId === state.currentRoom) {
+                                // Reload messages for current room
+                                loadMessages();
+                            }
+                        } else if (event.data.type === 'switch-room') {
+                            // User clicked notification for a different room
+                            const roomId = event.data.roomId;
+                            if (roomId && roomId !== state.currentRoom) {
+                                switchRoom(roomId);
+                            }
                         }
+                    });
+                    
+                    // Check for service worker updates
+                    reg.addEventListener('updatefound', () => {
+                        const newWorker = reg.installing;
+                        console.log('Service Worker update found');
+                        
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // New service worker installed, prompt user to reload
+                                console.log('New Service Worker installed');
+                                // You can show a toast/notification here to reload the app
+                            }
+                        });
                     });
                     
                     // Register for background sync if supported
                     if ('sync' in reg) {
                         try {
                             await reg.sync.register('sync-messages');
+                            console.log('Background sync registered');
                         } catch (e) {
                             console.log('Background sync not supported:', e);
                         }
@@ -667,12 +710,15 @@
                                 await reg.periodicSync.register('check-messages', {
                                     minInterval: 60 * 1000, // 1 minute
                                 });
+                                console.log('Periodic background sync registered');
                             }
                         } catch (e) {
                             console.log('Periodic background sync not supported:', e);
                         }
                     }
-                } catch (e) { console.error('SW registration failed:', e); }
+                } catch (e) { 
+                    console.error('SW registration failed:', e); 
+                }
             }
         }
 

@@ -142,6 +142,7 @@ See [`.env.example`](../.env.example) for the full list. Key variables:
 - **[CODEIGNITER.md](./CODEIGNITER.md)** – CI4 controllers, models, migrations, Valkey integration.
 - **[PWA.md](./PWA.md)** – Service worker, manifest, and push notification setup.
 - **[CAPACITOR.md](./CAPACITOR.md)** – Capacitor integration for native iOS/Android apps.
+- **[WORKBOX_INTEGRATION.md](./WORKBOX_INTEGRATION.md)** – Workbox for enhanced background sync and push notifications.
 
 ---
 
