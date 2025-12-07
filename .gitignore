@@ -1,0 +1,39 @@
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Composer
+/vendor/
+composer.phar
+
+# CodeIgniter 4
+/writable/cache/*
+!/writable/cache/index.html
+/writable/logs/*
+!/writable/logs/index.html
+/writable/session/*
+!/writable/session/index.html
+/writable/uploads/*
+!/writable/uploads/index.html
+/writable/debugbar/*
+.env
+
+# Testing
+/phpunit*.xml
+
+# SSL Certificates (generated locally)
+/certs/
+
+# Node modules
+node_modules/
+
+# Build artifacts
+/build/
+*.log
